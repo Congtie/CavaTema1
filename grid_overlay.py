@@ -12,9 +12,73 @@ def show_image(title, image):
     cv.destroyAllWindows()
 
 def extrage_careu(img):
-    # TODO: Implementează funcția de extragere a careului
-    # Momentan facem resize la 1600x1600 pentru a simula rezultatul
-    return cv.resize(img, (1600, 1600))
+    # Convert to HSV color space
+    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    
+    # Define HSV range based on user feedback (Brown Background)
+    lower = np.array([0, 50, 20])
+    upper = np.array([30, 255, 200])
+
+    mask = cv.inRange(hsv, lower, upper)
+    
+    # Invert mask (selecting background)
+    mask = cv.bitwise_not(mask)
+    
+    # Morphological operations to clean up the mask
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
+    mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel)
+    
+    contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    contours = sorted(contours, key=cv.contourArea, reverse=True)
+    
+    board_contour = None
+    approx = None
+    image_area = img.shape[0] * img.shape[1]
+    
+    for cnt in contours:
+        area = cv.contourArea(cnt)
+        if area < 0.05 * image_area:
+            continue
+            
+        hull = cv.convexHull(cnt)
+        perimeter = cv.arcLength(hull, True)
+        curr_approx = cv.approxPolyDP(hull, 0.02 * perimeter, True)
+        
+        if len(curr_approx) == 4:
+            board_contour = hull
+            approx = curr_approx
+            break
+
+    if board_contour is None:
+        # Fallback: return resized image if detection fails
+        return cv.resize(img, (1600, 1600))
+
+    # Reshape approx to (4, 2)
+    pts = approx.reshape(4, 2)
+
+    # Order points: top-left, top-right, bottom-right, bottom-left
+    rect = np.zeros((4, 2), dtype="float32")
+    
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)] # Top-left
+    rect[2] = pts[np.argmax(s)] # Bottom-right
+    
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)] # Top-right
+    rect[3] = pts[np.argmax(diff)] # Bottom-left
+    
+    width = 1600
+    height = 1600
+    
+    destination_of_puzzle = np.array([[0,0],[width,0],[width,height],[0,height]], dtype="float32")
+
+    M = cv.getPerspectiveTransform(rect, destination_of_puzzle)
+    
+    # Warp the original color image
+    result = cv.warpPerspective(img, M, (width, height))
+    
+    return result
 
 lines_horizontal=[]
 # Folosim linspace pentru a împărți 1600 în 9 secțiuni egale (10 linii)
