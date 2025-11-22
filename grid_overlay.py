@@ -81,8 +81,8 @@ def extrage_careu(img):
     return result
 
 lines_horizontal=[]
-# Folosim linspace pentru a împărți 1600 în 15 secțiuni egale (16 linii)
-for i in np.linspace(0, 1600, 16):
+# Folosim linspace pentru a împărți 1600 în 16 secțiuni egale (17 linii)
+for i in np.linspace(0, 1600, 17):
     y = int(i)
     # Corecție pentru ultima linie să fie în interiorul imaginii
     if y == 1600: y = 1599
@@ -93,7 +93,7 @@ for i in np.linspace(0, 1600, 16):
     lines_horizontal.append(l)
 
 lines_vertical=[]
-for i in np.linspace(0, 1600, 16):
+for i in np.linspace(0, 1600, 17):
     x = int(i)
     if x == 1600: x = 1599
     
