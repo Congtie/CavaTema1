@@ -99,17 +99,20 @@ def load_templates(template_folder):
         print(f"Folderul {template_folder} nu exista!")
         return templates
     
-    for file in os.listdir(template_folder):
-        if file.lower().endswith(('.jpg', '.jpeg', '.png')):
-            # LE INCLUDEM PE TOATE, inclusiv 'sus', pentru a le putea filtra negativ mai tarziu
-            path = os.path.join(template_folder, file)
-            img = cv.imread(path)
-            if img is not None:
-                # Convertim la HSV in loc de grayscale
-                img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-                templates.append((file, img_hsv))
+    # Citim din toate subfolderele si din root
+    for root, dirs, files in os.walk(template_folder):
+        for file in files:
+            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                path = os.path.join(root, file)
+                img = cv.imread(path)
+                if img is not None:
+                    # Convertim la HSV
+                    img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+                    templates.append((file, img_hsv))
     return templates
 
+def match_cell(cell_hsv, templates, threshold=0.6):
+    best_score = -1
 def match_cell(cell_hsv, templates, threshold=0.6):
     best_score = -1
     best_template_name = None
@@ -131,16 +134,14 @@ def match_cell(cell_hsv, templates, threshold=0.6):
             elif angle == 270:
                 rotated_tmpl = cv.rotate(tmpl_resized, cv.ROTATE_90_COUNTERCLOCKWISE)
             
-            # Match pe toate canalele HSV (sau doar pe V si S)
-            # Optiune 1: Match pe canalul V (Value - luminozitate)
+            # Match pe canalele V si S
             res_v = cv.matchTemplate(cell_hsv[:,:,2], rotated_tmpl[:,:,2], cv.TM_CCOEFF_NORMED)
             score_v = np.max(res_v)
             
-            # Optiune 2: Match pe canalul S (Saturation - saturatie)
             res_s = cv.matchTemplate(cell_hsv[:,:,1], rotated_tmpl[:,:,1], cv.TM_CCOEFF_NORMED)
             score_s = np.max(res_s)
             
-            # Combinam scorurile (media sau max)
+            # Media simpla
             score = (score_v + score_s) / 2.0
             
             if score > best_score:
@@ -156,11 +157,27 @@ IMG_SIZE = 1600
 CELL_SIZE = IMG_SIZE // GRID_SIZE
 MATCH_THRESHOLD = 0.40
 
+# Cream folderul pentru imagini detectate
+output_folder = 'detectate'
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+
+# Incarcam template-urile o singura data
+templates = load_templates('templates')
+print(f"Am incarcat {len(templates)} template-uri.\n")
+
 input_folder = 'antrenare'
-test_file = '1_13.jpg'
 
 if os.path.exists(input_folder):
-    files = [test_file]
+    # Excludem fisierele generate anterior
+    files = [f for f in os.listdir(input_folder) 
+             if f.lower().endswith(('.jpg', '.jpeg', '.png')) 
+             and not ('_detected' in f or '_board' in f)]
+    
+    print(f"Procesez {len(files)} imagini...\n")
+    
+    # Test doar pe 4_19.jpg
+    files = [f for f in files if f == '4_19.jpg']
     
     for file in files:
         if file.lower().endswith(('.jpg', '.jpeg', '.png')):
@@ -170,7 +187,7 @@ if os.path.exists(input_folder):
                 print(f"Nu am putut citi imaginea: {path}")
                 continue
             
-            print(f"Procesare: {file}")
+            print(f"\nProcesare: {file}")
             board = extrage_careu(img)
             
             # Board deja este 1600x1600 din extrage_careu
@@ -180,9 +197,7 @@ if os.path.exists(input_folder):
             output = board.copy()
             detected_count = 0
             
-            # Incarcam template-urile
-            templates = load_templates('templates')
-            print(f"  Am incarcat {len(templates)} template-uri.")
+            # Template-urile sunt deja incarcate global
             
             for row in range(GRID_SIZE):
                 for col in range(GRID_SIZE):
@@ -201,11 +216,11 @@ if os.path.exists(input_folder):
                     dark_ratio = dark_pixels / cell_gray.size
                     
                     # O piesa Qwirkle are parte neagra (forma) si parte colorata
-                    # Dark ratio ar trebui sa fie peste 35% (pentru a elimina linii de grid si umbre)
-                    has_valid_dark_content = dark_ratio > 0.35
+                    # Dark ratio ar trebui sa fie peste 40% (pentru a elimina linii de grid si umbre)
+                    has_valid_dark_content = dark_ratio > 0.40
                     
-                    # Template Matching pe HSV
-                    is_match, score, name = match_cell(cell_hsv, templates, 0.60)  # Scadem la 0.60 pentru piese mai dificile
+                    # Template Matching pe HSV (V + S)
+                    is_match, score, name = match_cell(cell_hsv, templates, 0.55)
                     
                     # FILTRARE NEGATIVA: ignoram 1sus, 2sus, 1jos, 2jos
                     if name and ('sus' in name.lower() or 'jos' in name.lower()):
@@ -236,13 +251,6 @@ if os.path.exists(input_folder):
                     else:
                         # GOL - afisam scorurile pentru debugging
                         cv.circle(output, (center_x, center_y), 3, (0, 0, 255), -1)
-                        
-                        # Pentru 15C, 15D debugging
-                        col_letter = chr(65 + col)
-                        row_number = row + 1
-                        if row_number == 15 and col_letter in ['C', 'D']:
-                            debug_text = f"{row_number}{col_letter}: S:{score:.2f} D:{dark_ratio:.2f}"
-                            cv.putText(output, debug_text, (center_x-30, center_y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1)
             
             print(f"  Piese detectate: {detected_count}")
             
@@ -266,8 +274,9 @@ if os.path.exists(input_folder):
                 y_pos = int((i + 0.5) * CELL_SIZE)
                 cv.putText(output, row_label, (10, y_pos + 10), font, 0.8, (255, 255, 0), 2)
             
-            output_path = path.replace('.jpg', '_detected.jpg')
+            # Salvam in folderul separat
+            output_path = os.path.join(output_folder, file.replace('.jpg', '_detected.jpg'))
             cv.imwrite(output_path, output)
-            print(f"  Imaginea cu piese detectate a fost salvata: {output_path}")
+            print(f"  Salvat: {output_path}")
 else:
     print(f"Folderul {input_folder} nu exista!")
