@@ -243,8 +243,9 @@ if os.path.exists(input_folder):
                         
                         cv.circle(output, (center_x, center_y), 20, (0, 255, 0), -1)
                         
-                        # Afisam coordonata, numele template-ului si scorul
-                        debug_text = f"{cell_coord} {name.split('.')[0][:4]}"
+                        # Afisam coordonata si numele template-ului
+                        template_name = name.split('.')[0].replace('_gray', '').replace('_hsv', '')
+                        debug_text = f"{cell_coord} {template_name}"
                         cv.putText(output, debug_text, (center_x-30, center_y-25), cv.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
                         debug_text2 = f"S:{score:.2f} D:{dark_ratio:.2f}"
                         cv.putText(output, debug_text2, (center_x-30, center_y+35), cv.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
