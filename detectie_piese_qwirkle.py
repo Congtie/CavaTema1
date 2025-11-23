@@ -108,20 +108,32 @@ def load_templates(template_folder):
                 if img is not None:
                     # Convertim la HSV
                     img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-                    templates.append((file, img_hsv))
+                    
+                    # Determinam eticheta (label) pe baza folderului
+                    rel_path = os.path.relpath(root, template_folder)
+                    if rel_path == '.':
+                        # Fisier in root (ex: 1sus.jpg -> label=1sus)
+                        label = os.path.splitext(file)[0]
+                    else:
+                        # Fisier in subfolder (ex: templates/cerc/x.jpg -> label=cerc)
+                        label = os.path.basename(root)
+                        
+                    templates.append((label, img_hsv))
     return templates
 
 def match_cell(cell_hsv, templates, threshold=0.6):
     best_score = -1
-def match_cell(cell_hsv, templates, threshold=0.6):
-    best_score = -1
-    best_template_name = None
+def match_cell(cell_hsv, templates, threshold=0.6, top_k=5):
+    # Lista pentru a stoca toate potrivirile: (scor, label)
+    all_matches = []
     
     h_cell, w_cell, _ = cell_hsv.shape
     
-    for name, tmpl in templates:
+    for label, tmpl in templates:
         # Redimensionam template-ul la dimensiunea celulei
         tmpl_resized = cv.resize(tmpl, (w_cell, h_cell))
+        
+        best_tmpl_score = -1
         
         # Rotim template-ul 0, 90, 180, 270 grade
         for angle in [0, 90, 180, 270]:
@@ -134,21 +146,45 @@ def match_cell(cell_hsv, templates, threshold=0.6):
             elif angle == 270:
                 rotated_tmpl = cv.rotate(tmpl_resized, cv.ROTATE_90_COUNTERCLOCKWISE)
             
-            # Match pe canalele V si S
+            # Match pe canalul V (Grayscale) - S-ul poate fi zgomotos din cauza reflexiilor
             res_v = cv.matchTemplate(cell_hsv[:,:,2], rotated_tmpl[:,:,2], cv.TM_CCOEFF_NORMED)
-            score_v = np.max(res_v)
+            score = np.max(res_v)
             
-            res_s = cv.matchTemplate(cell_hsv[:,:,1], rotated_tmpl[:,:,1], cv.TM_CCOEFF_NORMED)
-            score_s = np.max(res_s)
-            
-            # Media simpla
-            score = (score_v + score_s) / 2.0
-            
-            if score > best_score:
-                best_score = score
-                best_template_name = name
+            if score > best_tmpl_score:
+                best_tmpl_score = score
+        
+        all_matches.append((best_tmpl_score, label))
+    
+    # Sortam descrescator dupa scor
+    all_matches.sort(key=lambda x: x[0], reverse=True)
+    
+    # Filtram cele sub prag
+    valid_matches = [m for m in all_matches if m[0] > threshold]
+    
+    if not valid_matches:
+        return False, 0.0, None
+        
+    # REGULA DE AUR (Exact Match): Daca avem o potrivire aproape perfecta, o luam pe aia
+    if valid_matches[0][0] > 0.95:
+        return True, valid_matches[0][0], valid_matches[0][1]
+        
+    # Luam top K
+    top_matches = valid_matches[:top_k]
+    
+    # Votare (suma scorurilor pentru fiecare label)
+    votes = {}
+    for score, label in top_matches:
+        if label not in votes:
+            votes[label] = 0
+        votes[label] += score
+        
+    # Gasim castigatorul
+    best_label = max(votes, key=votes.get)
+    
+    # Returnam cel mai mare scor individual pentru referinta
+    best_score = top_matches[0][0]
                 
-    return best_score > threshold, best_score, best_template_name
+    return True, best_score, best_label
 
 # --- MAIN ---
 
@@ -177,7 +213,7 @@ if os.path.exists(input_folder):
     print(f"Procesez {len(files)} imagini...\n")
     
     # Test doar pe 4_19.jpg
-    files = [f for f in files if f == '4_19.jpg']
+    files = [f for f in files if f == '4_19.jpg' or f == '5_20.jpg']
     
     for file in files:
         if file.lower().endswith(('.jpg', '.jpeg', '.png')):
@@ -244,7 +280,7 @@ if os.path.exists(input_folder):
                         cv.circle(output, (center_x, center_y), 20, (0, 255, 0), -1)
                         
                         # Afisam coordonata si numele template-ului
-                        template_name = name.split('.')[0].replace('_gray', '').replace('_hsv', '')
+                        template_name = name
                         debug_text = f"{cell_coord} {template_name}"
                         cv.putText(output, debug_text, (center_x-30, center_y-25), cv.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
                         debug_text2 = f"S:{score:.2f} D:{dark_ratio:.2f}"
