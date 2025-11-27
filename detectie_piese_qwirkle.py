@@ -82,10 +82,17 @@ def extrage_careu(img):
     rect[1] = pts[np.argmin(diff)]
     rect[3] = pts[np.argmax(diff)]
 
-    width = 1600
-    height = 1600
+    # Adaugam padding pentru a capta si marginile
+    padding = 50  # pixeli extra pe fiecare parte
+    width = 1600 + 2 * padding
+    height = 1600 + 2 * padding
     
-    destination_of_puzzle = np.array([[0,0],[width,0],[width,height],[0,height]], dtype="float32")
+    destination_of_puzzle = np.array([
+        [padding, padding],
+        [width - padding, padding],
+        [width - padding, height - padding],
+        [padding, height - padding]
+    ], dtype="float32")
 
     M = cv.getPerspectiveTransform(rect, destination_of_puzzle)
 
@@ -93,7 +100,7 @@ def extrage_careu(img):
     
     return result
 
-def load_templates(template_folder):
+def load_templates(template_folder, target_size=100):
     templates = []
     if not os.path.exists(template_folder):
         print(f"Folderul {template_folder} nu exista!")
@@ -106,6 +113,7 @@ def load_templates(template_folder):
                 path = os.path.join(root, file)
                 img = cv.imread(path)
                 if img is not None:
+                    # Nu redimensionam, pastram dimensiunea originala
                     # Convertim la HSV
                     img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
                     
@@ -121,32 +129,27 @@ def load_templates(template_folder):
                     templates.append((label, img_hsv))
     return templates
 
-def match_cell(cell_hsv, templates, threshold=0.6):
-    best_score = -1
-def match_cell(cell_hsv, templates, threshold=0.6, top_k=5):
+def match_cell(cell_hsv, templates, threshold=0.6, top_k=5, debug_coord=None):
     # Lista pentru a stoca toate potrivirile: (scor, label)
     all_matches = []
     
-    h_cell, w_cell, _ = cell_hsv.shape
-    
     for label, tmpl in templates:
-        # Redimensionam template-ul la dimensiunea celulei
-        tmpl_resized = cv.resize(tmpl, (w_cell, h_cell))
+        # Nu redimensionam - matchTemplate functioneaza cu dimensiuni diferite
         
         best_tmpl_score = -1
         
         # Rotim template-ul 0, 90, 180, 270 grade
         for angle in [0, 90, 180, 270]:
             if angle == 0:
-                rotated_tmpl = tmpl_resized
+                rotated_tmpl = tmpl
             elif angle == 90:
-                rotated_tmpl = cv.rotate(tmpl_resized, cv.ROTATE_90_CLOCKWISE)
+                rotated_tmpl = cv.rotate(tmpl, cv.ROTATE_90_CLOCKWISE)
             elif angle == 180:
-                rotated_tmpl = cv.rotate(tmpl_resized, cv.ROTATE_180)
+                rotated_tmpl = cv.rotate(tmpl, cv.ROTATE_180)
             elif angle == 270:
-                rotated_tmpl = cv.rotate(tmpl_resized, cv.ROTATE_90_COUNTERCLOCKWISE)
+                rotated_tmpl = cv.rotate(tmpl, cv.ROTATE_90_COUNTERCLOCKWISE)
             
-            # Match pe canalul V (Grayscale) - S-ul poate fi zgomotos din cauza reflexiilor
+            # Match pe canalul V (Grayscale)
             res_v = cv.matchTemplate(cell_hsv[:,:,2], rotated_tmpl[:,:,2], cv.TM_CCOEFF_NORMED)
             score = np.max(res_v)
             
@@ -157,6 +160,12 @@ def match_cell(cell_hsv, templates, threshold=0.6, top_k=5):
     
     # Sortam descrescator dupa scor
     all_matches.sort(key=lambda x: x[0], reverse=True)
+    
+    # DEBUG: Afisam toate scorurile pentru debug_coord
+    if debug_coord:
+        print(f"\n  === Scoruri pentru {debug_coord} ===")
+        for score, label in all_matches:
+            print(f"    {label}: {score:.3f}")
     
     # Filtram cele sub prag
     valid_matches = [m for m in all_matches if m[0] > threshold]
@@ -189,8 +198,12 @@ def match_cell(cell_hsv, templates, threshold=0.6, top_k=5):
 # --- MAIN ---
 
 GRID_SIZE = 16
-IMG_SIZE = 1600
-CELL_SIZE = IMG_SIZE // GRID_SIZE
+IMG_SIZE = 1700  # 1600 + 2*50 padding
+CELL_SIZE = 1600 // GRID_SIZE  # Celula ramane 100x100
+CELL_OFFSET = 50  # Offset pentru prima celula (padding)
+PATCH_SIZE = 138  # Dimensiunea patch-ului extras din imagine
+TEMPLATE_SIZE = 100  # Dimensiunea la care redimensionam template-urile
+MARGIN = (PATCH_SIZE - CELL_SIZE) // 2  # Margin pe fiecare parte
 MATCH_THRESHOLD = 0.40
 
 # Cream folderul pentru imagini detectate
@@ -198,7 +211,7 @@ output_folder = 'detectate'
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
-# Incarcam template-urile o singura data
+# Incarcam template-urile o singura data (la dimensiunea lor originala)
 templates = load_templates('templates')
 print(f"Am incarcat {len(templates)} template-uri.\n")
 
@@ -226,6 +239,9 @@ if os.path.exists(input_folder):
             print(f"\nProcesare: {file}")
             board = extrage_careu(img)
             
+            # Nume fisier fara extensie pentru folder debug
+            base_name = os.path.splitext(file)[0]
+            
             # Board deja este 1600x1600 din extrage_careu
             gray_board = cv.cvtColor(board, cv.COLOR_BGR2GRAY)
             hsv_board = cv.cvtColor(board, cv.COLOR_BGR2HSV)
@@ -237,26 +253,53 @@ if os.path.exists(input_folder):
             
             for row in range(GRID_SIZE):
                 for col in range(GRID_SIZE):
-                    x1 = col * CELL_SIZE
-                    y1 = row * CELL_SIZE
+                    # Adaugam offset-ul pentru padding
+                    x1 = CELL_OFFSET + col * CELL_SIZE
+                    y1 = CELL_OFFSET + row * CELL_SIZE
                     x2 = x1 + CELL_SIZE
                     y2 = y1 + CELL_SIZE
                     
-                    # Extract celula
-                    cell_hsv = hsv_board[y1:y2, x1:x2]
+                    # Extract patch mai mare pentru matching mai bun
+                    patch_x1 = max(0, x1 - MARGIN)
+                    patch_y1 = max(0, y1 - MARGIN)
+                    patch_x2 = min(IMG_SIZE, x2 + MARGIN)
+                    patch_y2 = min(IMG_SIZE, y2 + MARGIN)
+                    
+                    # Extract celula pentru verificare continut
                     cell_gray = gray_board[y1:y2, x1:x2]
+                    
+                    # Extract patch pentru matching
+                    cell_hsv = hsv_board[patch_y1:patch_y2, patch_x1:patch_x2]
+                    # Resize doar pentru a normaliza dimensiunea in caz de margini
+                    cell_hsv = cv.resize(cell_hsv, (PATCH_SIZE, PATCH_SIZE))
                     
                     # Verificare intensitate - o piesa ar trebui sa aiba zone intunecate
                     cell_median = np.median(cell_gray)
                     dark_pixels = np.sum(cell_gray < 100)
                     dark_ratio = dark_pixels / cell_gray.size
                     
+                    # Calculam coordonatele pentru debug (A-P, 1-16)
+                    col_letter = chr(65 + col)
+                    row_number = row + 1
+                    cell_coord = f"{row_number}{col_letter}"
+                    
                     # O piesa Qwirkle are parte neagra (forma) si parte colorata
                     # Dark ratio ar trebui sa fie peste 40% (pentru a elimina linii de grid si umbre)
                     has_valid_dark_content = dark_ratio > 0.40
                     
                     # Template Matching pe HSV (V + S)
-                    is_match, score, name = match_cell(cell_hsv, templates, 0.55)
+                    debug_param = cell_coord if cell_coord in ["16O", "4G"] else None
+                    is_match, score, name = match_cell(cell_hsv, templates, 0.55, debug_coord=debug_param)
+                    
+                    # DEBUG pentru 16O si 4G
+                    if cell_coord in ["16O", "4G"]:
+                        print(f"\n=== DEBUG {cell_coord} ===")
+                        print(f"  Score: {score:.3f}")
+                        print(f"  Is_match: {is_match}")
+                        print(f"  Template name: {name}")
+                        print(f"  Dark ratio: {dark_ratio:.3f}")
+                        print(f"  Has valid dark content: {has_valid_dark_content}")
+                        print(f"  Final is_piece: {is_match and has_valid_dark_content}")
                     
                     # FILTRARE NEGATIVA: ignoram 1sus, 2sus, 1jos, 2jos
                     if name and ('sus' in name.lower() or 'jos' in name.lower()):
@@ -264,6 +307,17 @@ if os.path.exists(input_folder):
                     
                     # Combinam: Match SI are continut intunecat valid
                     is_piece = is_match and has_valid_dark_content
+                    
+                    # DEBUG: Salvam patch-urile pentru 15O si 16O
+                    if cell_coord in ["15O", "16O", "15L", "4D", "4G"]:
+                        debug_folder = os.path.join(output_folder, 'debug_patches', base_name)
+                        os.makedirs(debug_folder, exist_ok=True)
+                        
+                        # Salvam patch-ul HSV convertit la BGR
+                        patch_bgr = cv.cvtColor(cell_hsv, cv.COLOR_HSV2BGR)
+                        patch_path = os.path.join(debug_folder, f"{cell_coord}_patch_138x138.jpg")
+                        cv.imwrite(patch_path, patch_bgr)
+                        print(f"  Salvat patch: {cell_coord}_patch_138x138.jpg")
                     
                     center_x = x1 + CELL_SIZE // 2
                     center_y = y1 + CELL_SIZE // 2
@@ -291,25 +345,26 @@ if os.path.exists(input_folder):
             
             print(f"  Piese detectate: {detected_count}")
             
-            # Desenam grila
-            lines = np.linspace(0, IMG_SIZE, GRID_SIZE + 1)
-            for val in lines:
-                p = int(val)
-                cv.line(output, (p, 0), (p, IMG_SIZE), (0, 255, 0), 2)
-                cv.line(output, (0, p), (IMG_SIZE, p), (0, 255, 0), 2)
+            # Desenam grila doar pe zona board-ului (ignoram padding-ul)
+            for i in range(GRID_SIZE + 1):
+                p = CELL_OFFSET + i * CELL_SIZE
+                # Linii verticale
+                cv.line(output, (p, CELL_OFFSET), (p, CELL_OFFSET + GRID_SIZE * CELL_SIZE), (0, 255, 0), 2)
+                # Linii orizontale
+                cv.line(output, (CELL_OFFSET, p), (CELL_OFFSET + GRID_SIZE * CELL_SIZE, p), (0, 255, 0), 2)
             
             # Adaugam etichetele pentru coloane (A-P) si randuri (1-16)
             font = cv.FONT_HERSHEY_SIMPLEX
             for i in range(GRID_SIZE):
                 # Coloane (A-P)
                 col_label = chr(65 + i)  # A=65 in ASCII
-                x_pos = int((i + 0.5) * CELL_SIZE)
-                cv.putText(output, col_label, (x_pos - 10, 30), font, 0.8, (255, 255, 0), 2)
+                x_pos = CELL_OFFSET + int((i + 0.5) * CELL_SIZE)
+                cv.putText(output, col_label, (x_pos - 10, CELL_OFFSET - 10), font, 0.8, (255, 255, 0), 2)
                 
                 # Randuri (1-16)
                 row_label = str(i + 1)
-                y_pos = int((i + 0.5) * CELL_SIZE)
-                cv.putText(output, row_label, (10, y_pos + 10), font, 0.8, (255, 255, 0), 2)
+                y_pos = CELL_OFFSET + int((i + 0.5) * CELL_SIZE)
+                cv.putText(output, row_label, (CELL_OFFSET - 30, y_pos + 10), font, 0.8, (255, 255, 0), 2)
             
             # Salvam in folderul separat
             output_path = os.path.join(output_folder, file.replace('.jpg', '_detected.jpg'))
