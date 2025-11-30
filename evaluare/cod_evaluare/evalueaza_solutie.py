@@ -135,19 +135,19 @@ def compare_annotations_bonus(filename_predicted,filename_gt,verbose=0):
 	return points_positions, points_tiles,points_score
 
 #EVALUATION ON TEST TEST
-print("EVALUATION ON TEST SET")
+print("EVALUATION ON TEST SET (ANTRENARE)")
 
 #change this on your machine pointing to your results (txt files)
-predictions_path_root = "../fisiere_solutie/331_Alexe_Bogdan/"
+predictions_path_root = "../../detectate/"
 
 
 #change this on your machine to point to the ground-truth test
-gt_path_root = "../fake_test/ground-truth/"
+gt_path_root = "../../antrenare/"
 
 #change this to 1 if you want to print results at each move
 verbose = 0
 total_points = 0
-for game in range(1,2):
+for game in range(1,6):
 	#change this to range (1,6) on the test set
 	for move in range(1,21):
 		
