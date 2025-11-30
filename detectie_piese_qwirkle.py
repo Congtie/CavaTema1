@@ -23,47 +23,56 @@ def detecteaza_bonus_pattern(piese_coords):
     """
     Detectează pătratele bonus (+1 și +2) pe baza pieselor inițiale.
     
-    Hardcodat pe baza pattern-ului specificat:
-    - Dacă 2B NU e ocupat: bonus +2 = [2B, 7G, 2J, 7O, 10B, 10J, 15G, 15O]
-                            bonus +1 = [6B, 5C, 4D, 3E, 2F, 7C, 6D, 5E, 4F, 3G, 2N, 3M, 4L, 5K, 6J, 
-                                        7K, 6L, 5M, 4N, 3O, 14B, 13C, 12D, 11E, 10F, 15C, 14D, 13E, 12F, 
-                                        11G, 14J, 13K, 12L, 11M, 10N, 15K, 14L, 13M, 12N, 11O]
-    - Dacă 2B E ocupat: bonus +2 = [2G, 7B, 2J, 7O, 10B, 15G, 15J, 10O]
-                        bonus +1 = [2C, 3D, 4E, 5F, 6G, 3B, 4C, 5D, 6E, 7F, 6J, 5K, 4L, 3M, 2N, 
-                                    7K, 6L, 5M, 4N, 3O, 14B, 13C, 12D, 11E, 10F, 15C, 14D, 13E, 12F, 
-                                    11G, 15N, 14M, 13L, 12K, 11J, 10K, 11L, 12M, 13N, 14O]
+    Tabla este împărțită în 4 cadrane, fiecare cu propriile reguli:
+    - Cadran 1 (1-8, A-H): verifică 2B
+    - Cadran 2 (1-8, I-P): verifică 2J
+    - Cadran 3 (9-16, A-H): verifică 10B
+    - Cadran 4 (9-16, I-P): verifică 10J
     """
     piese_set = set(piese_coords)
     
-    # Verificăm dacă 2B este ocupat
-    has_2B = '2B' in piese_set
+    bonus_1_set = set()
+    bonus_2_set = set()
     
-    # HACK: Pentru jocul 3, unde 2B e ocupat dar vrem pattern-ul celălalt
-    # Identificăm jocul 3 prin prezența pieselor specifice la start (ex: 13L)
-    is_game_3 = '2B' in piese_set and '13L' in piese_set
-    
-    if is_game_3:
-        print("  [DEBUG] Detectat Joc 3 -> Fortam pattern '2B liber'")
-        has_2B = False
-    
-    if not has_2B:
-        # 2B NU e ocupat
-        bonus_2_set = {'2B', '7G', '2J', '7O', '10B', '10J', '15G', '15O'}
-        bonus_1_set = {
-            '6B', '5C', '4D', '3E', '2F', '7C', '6D', '5E', '4F', '3G',
-            '2N', '3M', '4L', '5K', '6J', '7K', '6L', '5M', '4N', '3O',
-            '14B', '13C', '12D', '11E', '10F', '15C', '14D', '13E', '12F', '11G',
-            '14J', '13K', '12L', '11M', '10N', '15K', '14L', '13M', '12N', '11O'
-        }
+    # CADRAN 1 (1-8, A-H) - verifică 2B
+    if '2B' not in piese_set:
+        # 2B NU este ocupat
+        bonus_2_set.update(['2B', '7G'])
+        bonus_1_set.update(['6B', '5C', '4D', '3E', '2F', '7C', '6D', '5E', '4F', '3G'])
     else:
-        # 2B E ocupat
-        bonus_2_set = {'2G', '7B', '2J', '7O', '10B', '15G', '15J', '10O'}
-        bonus_1_set = {
-            '2C', '3D', '4E', '5F', '6G', '3B', '4C', '5D', '6E', '7F',
-            '6J', '5K', '4L', '3M', '2N', '7K', '6L', '5M', '4N', '3O',
-            '14B', '13C', '12D', '11E', '10F', '15C', '14D', '13E', '12F', '11G',
-            '15N', '14M', '13L', '12K', '11J', '10K', '11L', '12M', '13N', '14O'
-        }
+        # 2B ESTE ocupat
+        bonus_2_set.update(['7B', '2G'])
+        bonus_1_set.update(['2C', '3D', '4E', '5F', '6G', '3B', '4C', '5D', '6E', '7F'])
+    
+    # CADRAN 2 (1-8, I-P) - verifică 2J
+    if '2J' not in piese_set:
+        # 2J NU este ocupat
+        bonus_2_set.update(['2J', '7O'])
+        bonus_1_set.update(['6J', '5K', '4L', '3M', '2N', '7K', '6L', '5M', '4N', '3O'])
+    else:
+        # 2J ESTE ocupat
+        bonus_2_set.update(['7J', '2O'])
+        bonus_1_set.update(['2K', '3L', '4M', '5N', '6O', '3J', '4K', '5L', '6M', '7N'])
+    
+    # CADRAN 3 (9-16, A-H) - verifică 10B
+    if '10B' not in piese_set:
+        # 10B NU este ocupat
+        bonus_2_set.update(['10B', '15G'])
+        bonus_1_set.update(['14B', '13C', '12D', '11E', '10F', '15C', '14D', '13E', '12F', '11G'])
+    else:
+        # 10B ESTE ocupat
+        bonus_2_set.update(['10G', '15B'])
+        bonus_1_set.update(['10C', '11D', '12E', '13F', '14G', '11B', '12C', '13D', '14E', '15F'])
+    
+    # CADRAN 4 (9-16, I-P) - verifică 10J
+    if '10J' not in piese_set:
+        # 10J NU este ocupat
+        bonus_2_set.update(['10J', '15O'])
+        bonus_1_set.update(['14J', '13K', '12L', '11M', '10N', '15K', '14L', '13M', '12N', '11O'])
+    else:
+        # 10J ESTE ocupat
+        bonus_2_set.update(['10O', '15J'])
+        bonus_1_set.update(['10K', '11L', '12M', '13N', '14O', '11J', '12K', '13L', '14M', '15N'])
     
     return bonus_1_set, bonus_2_set
 
@@ -594,11 +603,6 @@ if os.path.exists(input_folder):
                 bonus_1_set, bonus_2_set = detecteaza_bonus_pattern(coords_only)
                 print(f"  [INFO] Bonus +1: {len(bonus_1_set)} patrate, Bonus +2: {len(bonus_2_set)} patrate")
                 
-                # Debug piese 3_00 si 4_00
-                if '3_00' in file or '4_00' in file:
-                    print(f"  [DEBUG {file}] Toate piesele: {current_pieces}")
-                    print(f"  [DEBUG {file}] 2B ocupat? {'2B' in [c for c,_,_ in current_pieces]}")
-                
                 # Nu salvăm fișier txt pentru x_00
                 previous_pieces = current_pieces
                 continue
@@ -618,14 +622,19 @@ if os.path.exists(input_folder):
             # Calculăm scorul pentru această mutare
             scor = calculeaza_scor_mutare(new_pieces, current_pieces, bonus_1_set, bonus_2_set)
             
-            # Debug specific pentru 3_01 si 4_01
-            if '3_01' in file or '4_01' in file:
-                print(f"  [DEBUG {file}] Piese noi: {new_pieces}")
-                for coord, _, _ in new_pieces:
+            # Debug specific pentru 5_01
+            if '5_01' in file:
+                print(f"\n  ===== DEBUG DETALIAT PENTRU 5_01 =====")
+                print(f"  Piese noi: {new_pieces}")
+                print(f"  Bonus +1 set: {bonus_1_set}")
+                print(f"  Bonus +2 set: {bonus_2_set}")
+                for coord, shape, color in new_pieces:
                     is_bonus_1 = coord in bonus_1_set
                     is_bonus_2 = coord in bonus_2_set
-                    print(f"    - {coord}: Bonus +1? {is_bonus_1}, Bonus +2? {is_bonus_2}")
-                print(f"  [DEBUG {file}] Scor final: {scor}")
+                    print(f"    {coord} ({shape}{color}): Bonus +1? {is_bonus_1}, Bonus +2? {is_bonus_2}")
+                print(f"  Scor calculat: {scor}")
+                print(f"  Scor asteptat (GT): 9")
+                print(f"  ==========================================\n")
 
             # Salvam fisierul txt doar cu piesele NOI
             txt_path = os.path.join(output_folder, file.replace('.jpg', '.txt'))
