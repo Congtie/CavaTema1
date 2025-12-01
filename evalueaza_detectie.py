@@ -89,7 +89,7 @@ gt_path_root = "antrenare/"
 verbose = 0
 total_points = 0
 
-for game in range(1, 6):  # 1_xx, 2_xx, 3_xx, 4_xx, 5_xx
+for game in range(1, 6):  # 5 jocuri de antrenare
     print(f"\n--- JOC {game} ---")
     game_points = 0
     

@@ -258,38 +258,104 @@ def extrage_careu(img):
     
     return result
 
-def detect_color(patch_hsv):
-    """Detecteaza culoarea piesei din centrul patch-ului folosind o regiune mai mare"""
-    h, w, _ = patch_hsv.shape
+def detect_color(cell_hsv, debug_coord=None):
+    """Detecteaza culoarea piesei din centrul celulei (fără margin)"""
+    h, w, _ = cell_hsv.shape
     center_y, center_x = h // 2, w // 2
     
-    # Luam o regiune mai mare (10x10 pixeli) pentru robustete
-    radius = 5
-    region = patch_hsv[max(0, center_y-radius):min(h, center_y+radius), 
-                       max(0, center_x-radius):min(w, center_x+radius)]
+    # Strategie îmbunătățită: în loc să luăm doar centrul (care poate fi umbră),
+    # luăm mostre din 4 puncte în jurul centrului și alegem pixelii cei mai luminoși
+    sample_points = [
+        (center_y - 15, center_x),      # sus
+        (center_y + 15, center_x),      # jos
+        (center_y, center_x - 15),      # stânga
+        (center_y, center_x + 15),      # dreapta
+    ]
     
-    # Calculam mediana valorilor HSV (mai robusta decat media)
-    h_median = np.median(region[:,:,0])
-    s_median = np.median(region[:,:,1])
-    v_median = np.median(region[:,:,2])
+    # Colectăm valorile HSV de la fiecare punct (regiune 5x5)
+    all_pixels = []
+    for py, px in sample_points:
+        if 0 <= py < h and 0 <= px < w:
+            region = cell_hsv[max(0, py-2):min(h, py+3), max(0, px-2):min(w, px+3)]
+            all_pixels.extend(region.reshape(-1, 3))
+    
+    # Convertim la numpy array
+    all_pixels = np.array(all_pixels)
+    
+    # Filtram doar pixelii cu V (brightness) peste un prag - aceștia reprezintă culoarea, nu umbra
+    bright_pixels = all_pixels[all_pixels[:, 2] > 60]  # V > 60
+    
+    if len(bright_pixels) == 0:
+        # Fallback: folosim toți pixelii dacă nu găsim nimic luminos
+        bright_pixels = all_pixels
+    
+    # Calculam mediana valorilor HSV din pixelii luminoși
+    h_median = np.median(bright_pixels[:, 0])
+    s_median = np.median(bright_pixels[:, 1])
+    v_median = np.median(bright_pixels[:, 2])
+    
+    # Debug pentru coordonate specifice
+    if debug_coord and debug_coord in ['15B', '13B', '14B']:
+        print(f"  [COLOR DEBUG {debug_coord}] H={h_median:.1f}, S={s_median:.1f}, V={v_median:.1f} (bright pixels: {len(bright_pixels)})")
     
     # Detectare White - saturatie foarte scazuta
     if s_median <= 50 and v_median >= 60:
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: W (White)")
         return "W"
     
-    # Detectie pe baza Hue cu range-uri mai largi
-    if h_median <= 22:  # 0-22
-        return "O"  # Orange
-    if 22 < h_median <= 38:  # 23-38
-        return "Y"  # Yellow
-    if 45 <= h_median <= 85:  # 45-85
-        return "G"  # Green
-    if 85 < h_median <= 130:  # 86-130
-        return "B"  # Blue
-    if h_median >= 160:  # 160-180
+    # Detectie pe baza Hue cu range-uri ajustate
+    # Red (rosu pur) - prioritate maxima pentru a evita confuzia cu orange
+    if h_median >= 165:  # 165-180
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: R (Red)")
         return "R"  # Red
     
-    return "?"  # Unknown (probabil Purple sau altceva între 130-160)
+    # Orange (portocaliu)
+    if h_median <= 18:  # 0-18
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: O (Orange)")
+        return "O"  # Orange
+    
+    # Yellow (galben)
+    if 18 < h_median <= 35:  # 19-35
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: Y (Yellow)")
+        return "Y"  # Yellow
+    
+    # Green (verde)
+    if 40 <= h_median <= 80:  # 40-80
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: G (Green)")
+        return "G"  # Green
+    
+    # Blue (albastru)
+    if 90 < h_median <= 130:  # 91-130
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: B (Blue)")
+        return "B"  # Blue
+    
+    # Red in middle range (pentru cazuri ambigue)
+    if 155 <= h_median < 165:  # 155-164
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: R (Red)")
+        return "R"  # Red
+    
+    # Zona ambigua intre yellow-green si blue-purple
+    if 35 < h_median < 40:
+        result = "Y" if h_median < 38 else "G"
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: {result} (ambiguous yellow-green)")
+        return result
+    if 80 < h_median <= 90:
+        result = "G" if h_median < 85 else "B"
+        if debug_coord and debug_coord in ['15B', '13B', '14B']:
+            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: {result} (ambiguous green-blue)")
+        return result
+    
+    if debug_coord and debug_coord in ['15B', '13B', '14B']:
+        print(f"  [COLOR DEBUG {debug_coord}] -> Detected: ? (Unknown)")
+    return "?"  # Unknown (probabil Purple 130-160)
 
 
 def load_templates(template_folder, target_size=100):
@@ -492,6 +558,7 @@ if os.path.exists(input_folder):
                     
                     # Extract celula pentru verificare continut
                     cell_gray = gray_board[y1:y2, x1:x2]
+                    cell_hsv_no_margin = hsv_board[y1:y2, x1:x2]  # Celula fără margin pentru detectare culoare
                     
                     # Extract patch pentru matching
                     cell_hsv = hsv_board[patch_y1:patch_y2, patch_x1:patch_x2]
@@ -515,8 +582,8 @@ if os.path.exists(input_folder):
                     # Template Matching pe HSV (V + S)
                     is_match, score, name = match_cell(cell_hsv, templates, 0.55)
                     
-                    # Detectam culoarea piesei
-                    color = detect_color(cell_hsv) if is_match else None
+                    # Detectam culoarea piesei din celula fara margin (evitam liniile verzi)
+                    color = detect_color(cell_hsv_no_margin, debug_coord=cell_coord) if is_match else None
                     
                     # FIX: Rombul alb se confunda cu cercul - verificam explicit cercul daca score-ul e apropiat
                     if is_match and name == 'romb' and color == 'W' and score < 0.88:
