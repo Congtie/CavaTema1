@@ -10,7 +10,6 @@ def compare_annotations(filename_predicted, filename_gt, verbose=0):
     p.close()
     gt.close()
 
-    # positions and tiles
     number_lines_p = len(all_lines_p)
     number_lines_gt = len(all_lines_gt)
 
@@ -18,7 +17,7 @@ def compare_annotations(filename_predicted, filename_gt, verbose=0):
     match_tiles = 1
     match_score = 1
 
-    for i in range(number_lines_gt - 1):  # Exclude ultima linie (scorul)
+    for i in range(number_lines_gt - 1):
         current_pos_gt, current_tile_gt = all_lines_gt[i].split()
         
         if verbose:
@@ -45,7 +44,6 @@ def compare_annotations(filename_predicted, filename_gt, verbose=0):
                 print(f"  MISSING LINE!")
     
     try:
-        # verify if there are more positions + tiles lines in the prediction file
         current_pos_p, current_tile_p = all_lines_p[number_lines_gt].split()
         match_positions = 0
         match_tiles = 0
@@ -55,7 +53,6 @@ def compare_annotations(filename_predicted, filename_gt, verbose=0):
     except:
         pass
     
-    # Comparăm scorul (ultima linie)
     try:
         score_p = int(all_lines_p[-1].strip())
         score_gt = int(all_lines_gt[-1].strip())
@@ -76,24 +73,21 @@ def compare_annotations(filename_predicted, filename_gt, verbose=0):
     return points_positions, points_tiles, points_score
 
 
-# EVALUATION ON TRAINING SET
 print("=" * 60)
 print("EVALUARE PE SETUL DE ANTRENARE")
 print("=" * 60)
 
-# path-uri
 predictions_path_root = "detectate/"
 gt_path_root = "antrenare/"
 
-# schimba la 1 pentru detalii
 verbose = 0
 total_points = 0
 
-for game in range(1, 6):  # 5 jocuri de antrenare
+for game in range(1, 6):
     print(f"\n--- JOC {game} ---")
     game_points = 0
     
-    for move in range(1, 21):  # 01 la 20 (skip _00)
+    for move in range(1, 21):
         name_move = str(move)
         if move < 10:
             name_move = '0' + str(move)
@@ -115,7 +109,6 @@ for game in range(1, 6):  # 5 jocuri de antrenare
         total_move_points = points_position + points_tiles + points_score
         game_points += total_move_points
         
-        # Afișează rezultate detaliate
         status = "OK" if total_move_points == 0.08 else "ERR"
         if verbose or total_move_points < 0.08:
             print(f"{status} {game_move}: Pos={points_position:.2f} Tile={points_tiles:.2f} Score={points_score:.2f} Total={total_move_points:.2f}")
