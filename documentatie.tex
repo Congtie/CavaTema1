@@ -1,0 +1,414 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[romanian]{babel}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    language=Python,
+    showstringspaces=false,
+    commentstyle=\color{gray},
+    keywordstyle=\color{blue},
+    stringstyle=\color{red}
+}
+
+\title{\textbf{Documentație Tehnică: \\Detectarea și Evaluarea Pieselor Qwirkle}}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Prezentare Generală}
+
+Sistemul implementat detectează automat piesele dintr-o imagine a jocului Qwirkle, extrage tabla de joc din fundal, identifică formele și culorile pieselor, calculează scorul conform regulilor oficiale Qwirkle, și identifică pătratele bonus pe baza configurației inițiale a jocului.
+
+\textbf{Întreaga implementare se află într-un singur fișier Python}: \texttt{detectie\_piese\_qwirkle.py} (655 linii).
+
+\section{Arhitectura Soluției}
+
+\subsection{Extragerea Tablei de Joc (HSV Masking)}
+
+Funcția \texttt{extrage\_careu()} extrage tabla de joc folosind o abordare bazată pe \textbf{mascare HSV} a fundalului, urmată de transformare perspectivă:
+
+\begin{enumerate}
+\item \textbf{Conversie în spațiul HSV}: 
+\begin{lstlisting}
+hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+\end{lstlisting}
+
+Spațiul HSV permite separarea mai ușoară a culorilor comparativ cu BGR.
+
+\item \textbf{Mascare culoare pentru fundal}: Se creează o mască pentru fundalul maro/masă folosind intervalul HSV [0,50,20] - [30,255,200]:
+\begin{lstlisting}
+lower = np.array([0, 50, 20])
+upper = np.array([30, 255, 200])
+mask = cv.inRange(hsv, lower, upper)
+mask = cv.bitwise_not(mask)  # Inversare: 1=tabla, 0=fundal
+\end{lstlisting}
+
+Acest interval captează tonurile de maro/bej ale mesei, iar inversarea măștii izolează tabla de joc.
+
+\item \textbf{Operații morfologice}: Pentru eliminarea zgomotului se aplică:
+\begin{lstlisting}
+kernel = np.ones((5, 5), np.uint8)
+mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
+mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel)
+\end{lstlisting}
+
+MORPH\_OPEN elimină pixel-ii izolați, iar MORPH\_CLOSE umple golurile mici.
+
+\item \textbf{Detecție contururi}: Se găsesc contururile externe și se sortează descrescător după arie:
+\begin{lstlisting}
+contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, 
+                               cv.CHAIN_APPROX_SIMPLE)
+contours = sorted(contours, key=cv.contourArea, reverse=True)
+\end{lstlisting}
+
+\item \textbf{Filtrare geometrică}: Pentru fiecare contur se verifică:
+\begin{itemize}
+\item Arie minimă: >5\% din aria imaginii
+\item Raport aspect: 0.5 < w/h < 2.0 (aproape pătrat)
+\item Soliditate: >0.7 (raport între arie și convex hull)
+\end{itemize}
+
+\item \textbf{Aproximare 4 colțuri}: Se folosește convex hull și aproximare poligonală:
+\begin{lstlisting}
+hull = cv.convexHull(cnt)
+perimeter = cv.arcLength(hull, True)
+approx = cv.approxPolyDP(hull, 0.02 * perimeter, True)
+if len(approx) == 4:
+    # Am gasit tabla!
+\end{lstlisting}
+
+\item \textbf{Transformare perspectivă}: Se ordonează cele 4 puncte (top-left, top-right, bottom-right, bottom-left) și se aplică transformare către dimensiunea țintă:
+\begin{lstlisting}
+padding = 50  # pixeli extra pe fiecare parte
+width = height = 1600 + 2 * padding  # 1700x1700
+M = cv.getPerspectiveTransform(rect, destination_of_puzzle)
+result = cv.warpPerspective(img, M, (width, height))
+\end{lstlisting}
+
+Rezultatul este o imagine 1700×1700 pixeli cu tabla normalizată la 1600×1600 și 50 pixeli padding pe fiecare latură.
+\end{enumerate}
+
+\subsection{Detectarea Formelor (Template Matching cu Rotații)}
+
+Funcția \texttt{match\_cell()} folosește template matching pentru identificarea formelor:
+
+\begin{enumerate}
+\item \textbf{Încărcarea template-urilor}: Funcția \texttt{load\_templates()} citește imaginile din folderul \texttt{templates/} și subfolderele sale:
+\begin{lstlisting}
+img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+templates.append((label, img_hsv))
+\end{lstlisting}
+
+Eticheta (label) este numele subfolderului (ex: "cerc", "patrat", "romb", "trifoi", "stea", "shuri").
+
+\item \textbf{Matching cu 4 rotații}: Pentru invarianță la rotație, fiecare template este testat la 0°, 90°, 180°, 270°:
+\begin{lstlisting}
+for angle in [0, 90, 180, 270]:
+    if angle == 90:
+        rotated_tmpl = cv.rotate(tmpl, cv.ROTATE_90_CLOCKWISE)
+    # ... (180, 270 similar)
+    res_v = cv.matchTemplate(cell_hsv[:,:,2], 
+                              rotated_tmpl[:,:,2], 
+                              cv.TM_CCOEFF_NORMED)
+    score = np.max(res_v)
+\end{lstlisting}
+
+Matching-ul se face pe canalul V (brightness) din spațiul HSV, care corespunde unei imagini grayscale.
+
+\item \textbf{Sistem de votare top-K}: Se păstrează toate potrivirile peste threshold (0.55) și se votează:
+\begin{lstlisting}
+votes = {}
+for score, label in top_matches[:top_k]:
+    if label not in votes:
+        votes[label] = 0
+    votes[label] += score
+best_label = max(votes, key=votes.get)
+\end{lstlisting}
+
+\item \textbf{Regula exact match}: Dacă scorul >0.95, se returnează direct acea potrivire fără votare.
+\end{enumerate}
+
+Pentru fiecare celulă din grilă (100×100 pixeli), se extrage un patch mai mare (150×150, cu margin de 25 pixeli) pentru matching mai robust la margini.
+
+\subsection{Detectarea Culorilor (Multi-Point Sampling)}
+
+Funcția \texttt{detect\_color()} implementează o strategie avansată pentru detectarea robustă a culorii:
+
+\begin{enumerate}
+\item \textbf{Sampling din 4 puncte cardinale}: În loc să sample doar din centru (care poate fi umbră sau parte neagră a formei), se prelevează din 4 regiuni:
+\begin{lstlisting}
+sample_points = [
+    (center_y - 15, center_x),      # sus
+    (center_y + 15, center_x),      # jos
+    (center_y, center_x - 15),      # stanga
+    (center_y, center_x + 15),      # dreapta
+]
+# Pentru fiecare punct, regiune 5x5
+region = cell_hsv[max(0, py-2):min(h, py+3), 
+                  max(0, px-2):min(w, px+3)]
+\end{lstlisting}
+
+\item \textbf{Filtrare pixeli luminoși}: Se păstrează doar pixelii cu V>60 pentru a elimina umbrele:
+\begin{lstlisting}
+all_pixels = np.array(all_pixels)
+bright_pixels = all_pixels[all_pixels[:, 2] > 60]
+\end{lstlisting}
+
+Această tehnică elimină problema detecției eronate cauzate de sampling din zonele întunecate/umbrite.
+
+\item \textbf{Calcul median HSV}: Se calculează mediana valorilor H (Hue), S (Saturation), V (Value):
+\begin{lstlisting}
+h_median = np.median(bright_pixels[:, 0])
+s_median = np.median(bright_pixels[:, 1])
+v_median = np.median(bright_pixels[:, 2])
+\end{lstlisting}
+
+\item \textbf{Clasificare după intervale HSV}:
+\begin{itemize}
+\item \textbf{White (W)}: S≤50 și V≥60
+\item \textbf{Red (R)}: H≥165 sau 155≤H<165
+\item \textbf{Orange (O)}: H≤18
+\item \textbf{Yellow (Y)}: 18<H≤35
+\item \textbf{Green (G)}: 40≤H≤80
+\item \textbf{Blue (B)}: 90<H≤130
+\end{itemize}
+
+Intervalele au fost ajustate empiric pentru a separa corect portocaliul de roșu și albastrul de verde.
+\end{enumerate}
+
+Culoarea este detectată din \textbf{celula fără margin} (100×100), nu din patch-ul extins, pentru a evita captarea liniilor verzi ale grilei.
+
+\subsection{Detectarea Pătratelor Bonus (Pattern Matching)}
+
+Funcția \texttt{detecteaza\_bonus\_pattern()} determină locațiile pătratelor bonus pe baza configurației inițiale (\texttt{x\_00.jpg}):
+
+\begin{itemize}
+\item Tabla este împărțită în \textbf{4 cadrane}:
+\begin{itemize}
+\item Cadran 1: rânduri 1-8, coloane A-H
+\item Cadran 2: rânduri 1-8, coloane I-P
+\item Cadran 3: rânduri 9-16, coloane A-H
+\item Cadran 4: rânduri 9-16, coloane I-P
+\end{itemize}
+
+\item Pentru fiecare cadran se verifică o \textbf{poziție cheie}: 2B, 2J, 10B, 10J
+
+\item În funcție de ocuparea poziției cheie, se aplică unul din 2 pattern-uri predefinite:
+\begin{lstlisting}
+if '2B' not in piese_set:
+    bonus_2_set.update(['2B', '7G'])
+    bonus_1_set.update(['6B', '5C', '4D', '3E', '2F', 
+                        '7C', '6D', '5E', '4F', '3G'])
+else:
+    bonus_2_set.update(['7B', '2G'])
+    bonus_1_set.update(['2C', '3D', '4E', '5F', '6G', 
+                        '3B', '4C', '5D', '6E', '7F'])
+\end{lstlisting}
+
+\item Returnează 2 set-uri: \texttt{bonus\_1\_set} (pătrate +1) și \texttt{bonus\_2\_set} (pătrate +2)
+\end{itemize}
+
+Această abordare permite detectarea dinamică a bonusurilor fără a fi hard-coded pentru o anumită configurație.
+
+\subsection{Calculul Scorului (Reguli Qwirkle)}
+
+Funcția \texttt{calculeaza\_scor\_mutare()} implementează regulile oficiale Qwirkle:
+
+\begin{enumerate}
+\item \textbf{Construire board}: Se creează un dicționar cu toate piesele (vechi + noi):
+\begin{lstlisting}
+board = {}
+for coord, shape, color in toate_piesele:
+    row, col = coord_to_pos(coord)
+    board[(row, col)] = (coord, shape, color)
+\end{lstlisting}
+
+\item \textbf{Detectare linii pentru fiecare piesă nouă}: Pentru fiecare piesă nouă, se verifică liniile orizontale și verticale continue:
+\begin{lstlisting}
+for direction in ['H', 'V']:
+    if direction == 'H':
+        linie = [(row, c) for c in range(1, 17) 
+                 if (row, c) in board]
+    else:
+        linie = [(r, col) for r in range(1, 17) 
+                 if (r, col) in board]
+\end{lstlisting}
+
+\item \textbf{Găsire secvență continuă}: Se identifică secvența continuă care conține piesa curentă (fără goluri).
+
+\item \textbf{Scor linie}: Dacă linia are >1 piesă și nu a fost deja calculată:
+\begin{lstlisting}
+puncte_linie = len(secventa)
+if len(secventa) == 6:
+    puncte_linie += 6  # Bonus Qwirkle
+scor_total += puncte_linie
+\end{lstlisting}
+
+\item \textbf{Evitare dublă contorizare}: Fiecare linie este marcată cu un identificator unic:
+\begin{lstlisting}
+linie_id = (direction, tuple(secventa))
+if linie_id not in linii_calculate:
+    linii_calculate.add(linie_id)
+    # ... calcul scor
+\end{lstlisting}
+
+\item \textbf{Bonus pătrate speciale}: Se adaugă +1 sau +2 puncte pentru piese noi plasate pe pătrate bonus:
+\begin{lstlisting}
+if coord in bonus_1_set:
+    scor_total += 1
+elif coord in bonus_2_set:
+    scor_total += 2
+\end{lstlisting}
+
+\item \textbf{Caz special (piese singure)}: Dacă nicio linie nu este formată, scorul = numărul de piese noi.
+\end{enumerate}
+
+\section{Pipeline-ul de Procesare}
+
+Bucla principală din \texttt{detectie\_piese\_qwirkle.py} procesează imaginile din \texttt{antrenare/}:
+
+\begin{enumerate}
+\item \textbf{Detecție joc nou}: La fiecare fișier \texttt{x\_00.jpg}, se resetează starea:
+\begin{lstlisting}
+game_num = int(file.split('_')[0])
+if game_num != current_game:
+    current_game = game_num
+    previous_pieces = set()
+    if '_00' in file:
+        # Se detecteaza bonusurile, dar NU se salveaza fisier
+\end{lstlisting}
+
+\item \textbf{Extragere tablă}: Se obține tabla normalizată 1700×1700:
+\begin{lstlisting}
+board = extrage_careu(img)
+gray_board = cv.cvtColor(board, cv.COLOR_BGR2GRAY)
+hsv_board = cv.cvtColor(board, cv.COLOR_BGR2HSV)
+\end{lstlisting}
+
+\item \textbf{Iterare prin grilă 16×16}: Pentru fiecare celulă (CELL\_SIZE=100, CELL\_OFFSET=50):
+\begin{lstlisting}
+x1 = CELL_OFFSET + col * CELL_SIZE
+y1 = CELL_OFFSET + row * CELL_SIZE
+x2, y2 = x1 + CELL_SIZE, y1 + CELL_SIZE
+
+# Patch extins pentru matching (150x150)
+patch_x1 = max(0, x1 - MARGIN)  # MARGIN=25
+# ...
+cell_hsv = hsv_board[patch_y1:patch_y2, patch_x1:patch_x2]
+cell_hsv = cv.resize(cell_hsv, (PATCH_SIZE, PATCH_SIZE))
+
+# Celula fara margin pentru culoare (100x100)
+cell_hsv_no_margin = hsv_board[y1:y2, x1:x2]
+\end{lstlisting}
+
+\item \textbf{Verificare conținut întunecat}: O piesă Qwirkle are parte neagră (forma):
+\begin{lstlisting}
+dark_pixels = np.sum(cell_gray < 100)
+dark_ratio = dark_pixels / cell_gray.size
+has_valid_dark_content = dark_ratio > 0.40
+\end{lstlisting}
+
+\item \textbf{Template matching + detectare culoare}:
+\begin{lstlisting}
+is_match, score, name = match_cell(cell_hsv, templates, 0.55)
+color = detect_color(cell_hsv_no_margin) if is_match else None
+\end{lstlisting}
+
+\item \textbf{Filtrări speciale}:
+\begin{itemize}
+\item Eliminare template-uri cu "sus"/"jos" în nume (false positives)
+\item Verificare confuzie cerc-romb pentru piese albe (score <0.88)
+\end{itemize}
+
+\item \textbf{Tracking piese noi}: Se compară cu imaginea anterioară pe baza (coord, culoare):
+\begin{lstlisting}
+previous_coords_colors = {(coord, color) 
+    for coord, _, color in previous_pieces}
+if (coord, color) not in previous_coords_colors:
+    new_pieces.add((coord, shape_code, color))
+\end{lstlisting}
+
+Acest lucru evită false positives când forma este detectată inconsistent dar piesa e aceeași.
+
+\item \textbf{Calcul scor + salvare}:
+\begin{lstlisting}
+scor = calculeaza_scor_mutare(new_pieces, current_pieces, 
+                               bonus_1_set, bonus_2_set)
+# Salvare in detectate/x_YY.txt
+\end{lstlisting}
+
+Format fișier: fiecare linie = \texttt{<coord> <cod\_forma><culoare>}, ultima linie = \texttt{<scor>}.
+
+Coduri forme: cerc=1, trifoi=2, romb=3, patrat=4, shuri=5, stea=6.
+\end{enumerate}
+
+\section{Rularea Codului}
+
+\subsection{Pregătirea Mediului}
+
+Instalați OpenCV și NumPy:
+\begin{lstlisting}[language=bash]
+pip install opencv-python numpy
+\end{lstlisting}
+
+\subsection{Structura Folderelor}
+
+\begin{lstlisting}
+CavaTema1/
+├── detectie_piese_qwirkle.py
+├── antrenare/
+│   ├── 1_00.jpg, 1_01.jpg, ..., 1_20.jpg
+│   ├── 2_00.jpg, 2_01.jpg, ..., 2_20.jpg
+│   └── ...
+└── templates/
+    ├── cerc/
+    ├── patrat/
+    ├── romb/
+    ├── trifoi/
+    ├── stea/
+    └── shuri/
+\end{lstlisting}
+
+\subsection{Executarea Detectării}
+
+\begin{lstlisting}[language=bash]
+python detectie_piese_qwirkle.py
+\end{lstlisting}
+
+Rezultate în \texttt{detectate/}:
+\begin{itemize}
+\item \texttt{x\_YY.txt}: coordonate, forme, culori, scor
+\item \texttt{x\_YY\_detected.jpg}: imagini debug (dacă \texttt{DEBUG\_MODE=True})
+\end{itemize}
+
+\subsection{Evaluarea Rezultatelor}
+
+\begin{lstlisting}[language=bash]
+python evalueaza_detectie.py detectie_piese_qwirkle.py
+\end{lstlisting}
+
+Script-ul compară \texttt{detectate/} cu ground truth din \texttt{antrenare/}.
+
+\section{Rezultate}
+
+\begin{itemize}
+\item \textbf{Training set}: 100\% acuratețe (8.00/8.00, 5 jocuri, 100 mutări)
+\item \textbf{Fake test}: 99.4\% acuratețe (1.59/1.60, 1 joc, 20 mutări)
+\end{itemize}
+
+Abordarea HSV masking + multi-point sampling s-a dovedit robustă la variații de iluminare, perspectivă și umbre.
+
+\end{document}
