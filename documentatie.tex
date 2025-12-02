@@ -21,8 +21,8 @@
 }
 
 \title{\textbf{Documentație Tehnică: \\Detectarea și Evaluarea Pieselor Qwirkle}}
-\author{}
-\date{}
+\author{Tema 1 - Computer Vision}
+\date{Decembrie 2025}
 
 \begin{document}
 
@@ -32,7 +32,7 @@
 
 Sistemul implementat detectează automat piesele dintr-o imagine a jocului Qwirkle, extrage tabla de joc din fundal, identifică formele și culorile pieselor, calculează scorul conform regulilor oficiale Qwirkle, și identifică pătratele bonus pe baza configurației inițiale a jocului.
 
-\textbf{Întreaga implementare se află într-un singur fișier Python}: \texttt{detectie\_piese\_qwirkle.py} (655 linii).
+\textbf{Întreaga implementare se află într-un singur fișier Python}: \texttt{solutie.py} (515 linii).
 
 \section{Arhitectura Soluției}
 
@@ -278,7 +278,7 @@ elif coord in bonus_2_set:
 
 \section{Pipeline-ul de Procesare}
 
-Bucla principală din \texttt{detectie\_piese\_qwirkle.py} procesează imaginile din \texttt{antrenare/}:
+Bucla principală din \texttt{solutie.py} procesează imaginile din folderul de input (implicit \texttt{antrenare/}):
 
 \begin{enumerate}
 \item \textbf{Detecție joc nou}: La fiecare fișier \texttt{x\_00.jpg}, se resetează starea:
@@ -361,34 +361,51 @@ Coduri forme: cerc=1, trifoi=2, romb=3, patrat=4, shuri=5, stea=6.
 
 Instalați OpenCV și NumPy:
 \begin{lstlisting}[language=bash]
-pip install opencv-python numpy
+pip install opencv-python==4.10.0.84 numpy==1.26.4
 \end{lstlisting}
 
 \subsection{Structura Folderelor}
 
 \begin{lstlisting}
 CavaTema1/
-├── detectie_piese_qwirkle.py
+├── solutie.py
+├── evalueaza_detectie.py
+├── README.txt
+├── documentatie.tex
 ├── antrenare/
 │   ├── 1_00.jpg, 1_01.jpg, ..., 1_20.jpg
+│   ├── 1_01.txt, ..., 1_20.txt (ground truth)
 │   ├── 2_00.jpg, 2_01.jpg, ..., 2_20.jpg
-│   └── ...
-└── templates/
-    ├── cerc/
-    ├── patrat/
-    ├── romb/
-    ├── trifoi/
-    ├── stea/
-    └── shuri/
+│   └── ... (5 jocuri)
+├── templates/
+│   ├── cerc/
+│   ├── patrat/
+│   ├── romb/
+│   ├── trifoi/
+│   ├── stea/
+│   └── shuri/
+├── detectate/ (creat automat)
+│   ├── *.txt
+│   └── *_detected.jpg (daca DEBUG_MODE=True)
+└── evaluare/
+    ├── fake_test/
+    └── cod_evaluare/
+        └── evalueaza_solutie.py
 \end{lstlisting}
 
 \subsection{Executarea Detectării}
 
+\textbf{Rulare pe setul de antrenare}:
 \begin{lstlisting}[language=bash]
-python detectie_piese_qwirkle.py
+python solutie.py
 \end{lstlisting}
 
-Rezultate în \texttt{detectate/}:
+\textbf{Rulare pe fake\_test}:
+\begin{lstlisting}[language=bash]
+python solutie.py evaluare/fake_test evaluare/fake_test/detectate
+\end{lstlisting}
+
+Rezultate în folderul de output specificat:
 \begin{itemize}
 \item \texttt{x\_YY.txt}: coordonate, forme, culori, scor
 \item \texttt{x\_YY\_detected.jpg}: imagini debug (dacă \texttt{DEBUG\_MODE=True})
@@ -396,19 +413,26 @@ Rezultate în \texttt{detectate/}:
 
 \subsection{Evaluarea Rezultatelor}
 
+\textbf{Evaluare custom}:
 \begin{lstlisting}[language=bash]
-python evalueaza_detectie.py detectie_piese_qwirkle.py
+python evalueaza_detectie.py
 \end{lstlisting}
 
-Script-ul compară \texttt{detectate/} cu ground truth din \texttt{antrenare/}.
+\textbf{Evaluare oficială}:
+\begin{lstlisting}[language=bash]
+cd evaluare/cod_evaluare
+python evalueaza_solutie.py
+\end{lstlisting}
+
+Scripturile compară fișierele de output cu ground truth.
 
 \section{Rezultate}
 
 \begin{itemize}
-\item \textbf{Training set}: 100\% acuratețe (8.00/8.00, 5 jocuri, 100 mutări)
-\item \textbf{Fake test}: 99.4\% acuratețe (1.59/1.60, 1 joc, 20 mutări)
+\item \textbf{Training set (antrenare/)}: 100\% acuratețe (8.00/8.00 puncte, 5 jocuri, 100 mutări)
+\item \textbf{Fake test}: 100\% acuratețe (8.00/8.00 puncte, 1 joc, 20 mutări)
 \end{itemize}
 
-Abordarea HSV masking + multi-point sampling s-a dovedit robustă la variații de iluminare, perspectivă și umbre.
+Abordarea HSV masking + 4-cadran bonus detection + multi-point color sampling s-a dovedit robustă la variații de iluminare, perspectivă și umbre. Sistemul de detectare a bonusurilor bazat pe verificarea ocupării colțurilor permite adaptarea automată la diferite configurații inițiale ale jocului.
 
 \end{document}
