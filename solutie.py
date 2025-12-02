@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 import os
+import sys
 
 DEBUG_MODE = True
 
@@ -230,16 +231,10 @@ def detect_color(cell_hsv, debug_coord=None):
     if h_median <= 18:
         return "O"
     
-    # Yellow (galben)
-    if 18 < h_median <= 35:  # 19-35
-        if debug_coord and debug_coord in ['15B', '13B', '14B']:
-            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: Y (Yellow)")
-        return "Y"  # Yellow
+    if 18 < h_median <= 35:
+        return "Y"
     
-    # Green (verde)
-    if 40 <= h_median <= 80:  # 40-80
-        if debug_coord and debug_coord in ['15B', '13B', '14B']:
-            print(f"  [COLOR DEBUG {debug_coord}] -> Detected: G (Green)")
+    if 40 <= h_median <= 80:
         return "G"
     
     if 90 < h_median <= 130:
@@ -347,14 +342,14 @@ SHAPE_TO_CODE = {
     'shuri': 5
 }
 
-output_folder = 'detectate'
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
-
 templates = load_templates('templates')
 print(f"Am incarcat {len(templates)} template-uri.\n")
 
-input_folder = 'antrenare'
+input_folder = sys.argv[1] if len(sys.argv) > 1 else 'antrenare'
+output_folder = sys.argv[2] if len(sys.argv) > 2 else 'detectate'
+
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
 
 if os.path.exists(input_folder):
     files = [f for f in os.listdir(input_folder) 

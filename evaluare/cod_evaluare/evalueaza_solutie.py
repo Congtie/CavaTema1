@@ -174,43 +174,4 @@ for game in range(1,6):
 print(total_points)
 
 
-#EVALUATION ON BONUS TEST TEST
-print("EVALUATION ON BONUS TEST SET")
-
-
-#change this on your machine pointing to your results (txt files)
-predictions_path_bonus_root = "../fisiere_solutie/331_Alexe_Bogdan/bonus/"
-
-#change this on your machine to point to the ground-truth test
-gt_path_root_bonus = "../fake_test/ground-truth/bonus/"
-
-
-#change this to 1 if you want to print results at each move
-verbose = 1
-total_points_bonus = 0
-for game in range(1,2):
-	for move in range(1,21):
-		name_move = str(move)
-		if(move< 10):
-			name_move = '0'+str(move)
-
-		filename_predicted = predictions_path_bonus_root + str(game) + '_' + name_move + '.txt'
-		filename_gt = gt_path_root_bonus + str(game) + '_' + name_move + '.txt'
-
-		game_move = str(game) + '_' + name_move
-		points_position = 0
-		points_tiles = 0
-		points_score = 0		
-
-		try:
-			points_position, points_tiles, points_score = compare_annotations_bonus(filename_predicted,filename_gt,verbose)
-		except:
-			print("For image: ", game_move, " encountered an error")
-
-		print("Image: ", game_move, "Points position: ", points_position, "Points tiles: ",points_tiles, "Points score: ", points_score)
-		total_points_bonus = total_points_bonus + points_position + points_tiles + points_score
-
-print(total_points)
-
 print("Puncte totale din jocuri normale = ", total_points)
-print("Puncte totale din bonus = ", total_points_bonus)
