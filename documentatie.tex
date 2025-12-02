@@ -178,12 +178,12 @@ v_median = np.median(bright_pixels[:, 2])
 
 \item \textbf{Clasificare după intervale HSV}:
 \begin{itemize}
-\item \textbf{White (W)}: S≤50 și V≥60
-\item \textbf{Red (R)}: H≥165 sau 155≤H<165
-\item \textbf{Orange (O)}: H≤18
-\item \textbf{Yellow (Y)}: 18<H≤35
-\item \textbf{Green (G)}: 40≤H≤80
-\item \textbf{Blue (B)}: 90<H≤130
+\item \textbf{White (W)}: $S \leq 50$ și $V \geq 60$
+\item \textbf{Red (R)}: $H \geq 165$ sau $155 \leq H < 165$
+\item \textbf{Orange (O)}: $H \leq 18$
+\item \textbf{Yellow (Y)}: $18 < H \leq 35$
+\item \textbf{Green (G)}: $40 \leq H \leq 80$
+\item \textbf{Blue (B)}: $90 < H \leq 130$
 \end{itemize}
 
 Intervalele au fost ajustate empiric pentru a separa corect portocaliul de roșu și albastrul de verde.
@@ -366,32 +366,32 @@ pip install opencv-python==4.10.0.84 numpy==1.26.4
 
 \subsection{Structura Folderelor}
 
-\begin{lstlisting}
+\begin{verbatim}
 CavaTema1/
-├── solutie.py
-├── evalueaza_detectie.py
-├── README.txt
-├── documentatie.tex
-├── antrenare/
-│   ├── 1_00.jpg, 1_01.jpg, ..., 1_20.jpg
-│   ├── 1_01.txt, ..., 1_20.txt (ground truth)
-│   ├── 2_00.jpg, 2_01.jpg, ..., 2_20.jpg
-│   └── ... (5 jocuri)
-├── templates/
-│   ├── cerc/
-│   ├── patrat/
-│   ├── romb/
-│   ├── trifoi/
-│   ├── stea/
-│   └── shuri/
-├── detectate/ (creat automat)
-│   ├── *.txt
-│   └── *_detected.jpg (daca DEBUG_MODE=True)
-└── evaluare/
-    ├── fake_test/
-    └── cod_evaluare/
-        └── evalueaza_solutie.py
-\end{lstlisting}
+  solutie.py
+  evalueaza_detectie.py
+  README.txt
+  documentatie.tex
+  antrenare/
+    1_00.jpg, 1_01.jpg, ..., 1_20.jpg
+    1_01.txt, ..., 1_20.txt (ground truth)
+    2_00.jpg, 2_01.jpg, ..., 2_20.jpg
+    ... (5 jocuri)
+  templates/
+    cerc/
+    patrat/
+    romb/
+    trifoi/
+    stea/
+    shuri/
+  detectate/ (creat automat)
+    *.txt
+    *_detected.jpg (daca DEBUG_MODE=True)
+  evaluare/
+    fake_test/
+    cod_evaluare/
+      evalueaza_solutie.py
+\end{verbatim}
 
 \subsection{Executarea Detectării}
 
