@@ -165,8 +165,8 @@ for game in range(1,6):
 
 		try:
 			points_position, points_tiles, points_score = compare_annotations(filename_predicted,filename_gt,verbose)
-		except:
-			print("For image: ", game_move, " encountered an error")
+		except Exception as e:
+			print("For image: ", game_move, " encountered an error:", str(e))
 
 		print("Image: ", game_move, "Points position: ", points_position, "Points tiles: ",points_tiles, "Points score: ", points_score)
 		total_points = total_points + points_position + points_tiles + points_score
